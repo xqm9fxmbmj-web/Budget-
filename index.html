@@ -1,0 +1,552 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Budget & Diète Tracker</title>
+<meta name="theme-color" content="#0b1220">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Budget">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<style>
+  /* Layout: en-tête + 3 KPIs + grille d'enveloppes + panneaux (charges fixes, historique, archives) ; thème sombre unique */
+  :root {
+    color-scheme: dark;
+    --bg: #0b1220; --card: #141c2f; --card2: #1a2440; --border: #26325a;
+    --text: #e6ebf7; --muted: #8b97b8; --accent: #5b8cff; --accent-hi: #7aa1ff;
+    --green: #2ecc71; --orange: #f39c12; --red: #e74c3c;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: var(--bg); }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 16px; color: var(--text); min-height: 100%;
+    padding-block: 24px 60px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .container { max-width: 1000px; margin: 0 auto; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  h1 { font-size: 1.5rem; min-width: 0; }
+  h1 small { display: block; font-size: .85rem; color: var(--muted); font-weight: 400; margin-top: 4px; }
+  .actions { display: flex; gap: 10px; flex-wrap: wrap; }
+  button { font: inherit; cursor: pointer; border: 1px solid transparent; border-radius: 10px; padding: 11px 18px; font-weight: 600; transition: transform .15s ease, background .2s ease, box-shadow .2s ease, border-color .2s ease; }
+  button:active { transform: scale(.97); }
+  button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--accent-hi); outline-offset: 2px; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-hi); box-shadow: 0 6px 20px rgba(91,140,255,.35); transform: translateY(-2px); }
+  .btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+  .btn-ghost:hover { background: var(--card2); border-color: var(--muted); transform: translateY(-2px); }
+  .btn-danger { background: var(--red); color: #fff; }
+  .btn-danger:hover { filter: brightness(1.15); transform: translateY(-2px); }
+  .btn-sm { padding: 7px 12px; font-size: .85rem; }
+  .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px; }
+  .kpi, .env, .panel { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 20px; min-width: 0; }
+  .kpi .label { color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .05em; }
+  .kpi .value { font-size: 2rem; font-weight: 700; margin-top: 8px; transition: color .3s; font-variant-numeric: tabular-nums; }
+  .kpi .value.neg { color: var(--red); }
+  .kpi .value.pos { color: var(--green); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr)); gap: 16px; margin-bottom: 24px; }
+  .env { transition: transform .2s, border-color .2s; }
+  .env:hover { transform: translateY(-3px); border-color: var(--accent); }
+  .env-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .env-name { font-weight: 600; }
+  .env-amount { color: var(--muted); font-size: .9rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .gauge { height: 10px; background: var(--card2); border-radius: 999px; overflow: hidden; }
+  .gauge-fill { height: 100%; width: 0; border-radius: 999px; background: var(--green); transition: width .5s ease, background .3s; }
+  .gauge-fill.warn { background: var(--orange); }
+  .gauge-fill.over { background: var(--red); }
+  .env-foot { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; font-size: .85rem; color: var(--muted); gap: 8px; }
+  .limit-wrap { display: flex; align-items: center; gap: 6px; }
+  input, select { font: inherit; font-size: 16px; background: var(--card2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; transition: border-color .2s, box-shadow .2s; min-width: 0; }
+  input:focus, select:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(91,140,255,.25); }
+  .limit-wrap input { width: 84px; text-align: right; }
+
+  .panel { margin-bottom: 24px; }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 6px; }
+  .panel h2 { font-size: 1.1rem; }
+  .panel .sub { color: var(--muted); font-size: .85rem; line-height: 1.45; margin-bottom: 14px; }
+  .panel .tot { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+  .empty { color: var(--muted); font-size: .9rem; padding: 10px 0; line-height: 1.45; }
+  .fx { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); }
+  .fx:first-child { border-top: 0; }
+  .fx input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--green); flex: none; cursor: pointer; }
+  .fx .fx-name { flex: 1 1 120px; }
+  .fx .fx-amt { width: 92px; text-align: right; flex: none; }
+  .fx .eur { color: var(--muted); }
+  .inc-line.bad { color: var(--red); }
+  .fx.locked .fx-name-t { flex: 1 1 0; min-width: 0; overflow-wrap: anywhere; }
+  .fx .fx-amt-t { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .fx .lock { flex: none; font-size: .9rem; }
+  .h-lock { color: var(--muted); padding: 6px 10px; font-size: .9rem; }
+  .icon { background: transparent; color: var(--muted); border: 1px solid transparent; padding: 6px 10px; border-radius: 8px; font-size: .95rem; flex: none; }
+  .icon:hover { color: var(--red); border-color: var(--border); background: var(--card2); }
+  .fx-add { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--border); }
+  .fx-add input[type=text] { flex: 1 1 140px; }
+  .fx-add input[type=number] { width: 92px; text-align: right; }
+  .hist-item { display: grid; grid-template-columns: 56px 1fr auto auto; align-items: center; gap: 8px 10px; padding: 10px 0; border-top: 1px solid var(--border); }
+  .hist-item:first-child { border-top: 0; }
+  .h-date { color: var(--muted); font-size: .8rem; }
+  .h-main { min-width: 0; }
+  .h-note { overflow-wrap: anywhere; }
+  .h-note.none { color: var(--muted); }
+  .chip { display: inline-block; margin-top: 3px; font-size: .72rem; color: var(--muted); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; margin-right: 4px; }
+  .h-amt { font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  details { border-top: 1px solid var(--border); padding: 10px 0; }
+  details:first-of-type { border-top: 0; }
+  summary { cursor: pointer; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-weight: 600; list-style-position: inside; }
+  summary .tot { font-weight: 400; }
+  .arch-body { margin-top: 12px; }
+  .arch-cats { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr)); gap: 6px 16px; margin-bottom: 12px; font-size: .9rem; }
+  .arch-cats div { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .arch-cats b { color: var(--text); font-weight: 500; }
+  .arch-cats .over { color: var(--red); }
+  .arch-exp { display: flex; justify-content: space-between; gap: 10px; font-size: .88rem; padding: 4px 0; color: var(--muted); }
+  .arch-exp span:first-child { overflow-wrap: anywhere; min-width: 0; }
+  .arch-exp span:last-child { white-space: nowrap; color: var(--text); font-variant-numeric: tabular-nums; }
+  .arch-actions { margin-top: 10px; }
+
+  .overlay { position: fixed; inset: 0; background: rgba(5,8,18,.6); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); display: none; align-items: center; justify-content: center; padding: 16px; z-index: 10; overflow-y: auto; }
+  .overlay.open { display: flex; }
+  .modal { background: var(--card); border: 1px solid var(--border); border-radius: 16px; padding: 24px; width: 100%; max-width: 380px; box-shadow: 0 20px 60px rgba(0,0,0,.5); animation: pop .2s ease; margin: auto; }
+  @keyframes pop { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+  .modal h2 { margin-bottom: 12px; font-size: 1.2rem; }
+  .modal p { color: var(--muted); margin-bottom: 16px; line-height: 1.45; }
+  .modal label { display: block; margin-bottom: 14px; font-size: .85rem; color: var(--muted); }
+  .modal input, .modal select { width: 100%; margin-top: 6px; }
+  .backup { max-width: 460px; }
+  .backup textarea { width: 100%; height: 110px; margin: 6px 0 12px; font: 12px ui-monospace, Menlo, monospace; background: var(--card2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px; resize: vertical; }
+  .backup h3 { font-size: .9rem; margin: 6px 0; }
+  .backup .row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .backup input[type=file] { width: 100%; margin-bottom: 8px; }
+  .msg { font-size: .85rem; min-height: 1.2em; margin-bottom: 8px; color: var(--green); }
+  .msg.bad { color: var(--red); }
+  .err { color: var(--red); font-size: .85rem; margin: -6px 0 12px; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+  @media (max-width: 700px) { .kpis { grid-template-columns: 1fr; } .kpi .value { font-size: 1.6rem; } }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<div class="container">
+  <header>
+    <h1>💰 Budget & Diète Tracker <small id="incomeLine"></small></h1>
+    <div class="actions">
+      <button class="btn-primary" id="openModal">+ Saisir une dépense</button>
+      <button class="btn-ghost" id="openBackup">💾 Sauvegarde</button>
+      <button class="btn-ghost" id="reset">🔄 Réinitialiser le mois</button>
+    </div>
+  </header>
+
+  <section class="kpis">
+    <div class="kpi"><div class="label">Budget total alloué</div><div class="value" id="kAlloc">0 €</div></div>
+    <div class="kpi"><div class="label">Total dépensé ce mois</div><div class="value" id="kSpent">0 €</div></div>
+    <div class="kpi"><div class="label">Reste disponible</div><div class="value" id="kLeft">0 €</div></div>
+  </section>
+
+  <section class="grid" id="grid"></section>
+
+  <section class="panel" id="incomePanel">
+    <div class="panel-head"><h2>Revenus</h2><span class="tot" id="incomeTot"></span></div>
+    <p class="sub">Tes revenus du mois, verrouillés d'un mois à l'autre. Si ton revenu change, appuie sur « Modifier » : le nouveau montant reste jusqu'à la prochaine modification.</p>
+    <div id="incomeList"></div>
+    <div class="fx-add">
+      <input type="text" id="inName" maxlength="60" placeholder="Ex : Salaire, Bourse, Aide" aria-label="Nom du revenu">
+      <input type="number" id="inAmt" min="0" step="any" inputmode="decimal" placeholder="0" aria-label="Montant du revenu">
+      <button type="button" class="btn-ghost btn-sm" id="inAdd">Ajouter</button>
+    </div>
+    <div class="err" id="inErr" hidden style="margin:8px 0 0">Donne un nom et un montant au revenu.</div>
+  </section>
+
+  <section class="panel" id="fixedPanel">
+    <div class="panel-head"><h2>Charges fixes</h2><span class="tot" id="fixedTot"></span></div>
+    <p class="sub">Ces charges sont comptées automatiquement chaque mois et verrouillées : elles ne changent que si tu appuies sur « Modifier ». Après « Réinitialiser le mois », elles se remettent toutes seules.</p>
+    <div id="fixedList"></div>
+    <div class="fx-add">
+      <input type="text" id="fxName" maxlength="60" placeholder="Ex : Loyer, Téléphone, Netflix" aria-label="Nom de la charge fixe">
+      <input type="number" id="fxAmt" min="0" step="any" inputmode="decimal" placeholder="0" aria-label="Montant de la charge fixe">
+      <button type="button" class="btn-ghost btn-sm" id="fxAdd">Ajouter</button>
+    </div>
+    <div class="err" id="fxErr" hidden style="margin:8px 0 0">Donne un nom et un montant à la charge.</div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Historique du mois</h2><span class="tot" id="histTot"></span></div>
+    <div id="history"></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Archives</h2><span class="tot" id="archTot"></span></div>
+    <div id="archives"></div>
+  </section>
+</div>
+
+<div class="overlay" id="overlay">
+  <form class="modal" id="form" novalidate>
+    <h2>Saisir une dépense</h2>
+    <label>Catégorie <select id="cat"></select></label>
+    <label>Montant (€) <input type="number" id="amount" min="0" step="any" inputmode="decimal" placeholder="0,00"></label>
+    <label>Note (facultatif) <input type="text" id="note" maxlength="80" placeholder="Ex : Lidl, œufs et poulet"></label>
+    <p class="err" id="err" hidden>Entre un montant supérieur à 0.</p>
+    <div class="modal-actions">
+      <button type="button" class="btn-ghost" id="cancel">Annuler</button>
+      <button type="button" class="btn-primary" id="ok">Valider</button>
+    </div>
+  </form>
+</div>
+
+<div class="overlay" id="backupOverlay">
+  <div class="modal backup">
+    <h2>Sauvegarde</h2>
+    <h3>Exporter</h3>
+    <textarea id="backupText" readonly aria-label="Données exportées"></textarea>
+    <div class="row">
+      <button type="button" class="btn-primary" id="dl">Télécharger le fichier</button>
+      <button type="button" class="btn-ghost" id="copy">Copier</button>
+    </div>
+    <h3>Importer</h3>
+    <input type="file" id="importFile" accept=".json,application/json">
+    <textarea id="importText" placeholder="Ou colle ici le texte exporté" aria-label="Texte à importer"></textarea>
+    <div class="row"><button type="button" class="btn-ghost" id="importBtn">Importer le texte</button></div>
+    <div class="msg" id="backupMsg" role="status"></div>
+    <div class="modal-actions"><button type="button" class="btn-ghost" id="backupClose">Fermer</button></div>
+  </div>
+</div>
+
+<div class="overlay" id="confirmOverlay">
+  <div class="modal">
+    <h2>Réinitialiser le mois ?</h2>
+    <p id="confirmText"></p>
+    <div class="modal-actions">
+      <button type="button" class="btn-ghost" id="confirmNo">Annuler</button>
+      <button type="button" class="btn-danger" id="confirmYes">Archiver et réinitialiser</button>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const KEY = 'budget-diete-tracker-v2';
+  const OLD_KEY = 'budget-diete-tracker-v1';
+  const DEFAULT_ENV = [
+    { id: 'fixes',    name: 'Charges fixes',       limit: 450 },
+    { id: 'vetements',name: 'Vêtements Glow Up',   limit: 150 },
+    { id: 'diete',    name: 'Alimentation Diète',  limit: 125 },
+    { id: 'plaisirs', name: 'Plaisirs & Sorties',  limit: 100 },
+    { id: 'carburant',name: 'Carburant',           limit: 80  },
+    { id: 'epargne',  name: 'Épargne Sécurité',    limit: 145 },
+  ];
+  const catIds = DEFAULT_ENV.map(e => e.id);
+  const catName = id => (DEFAULT_ENV.find(e => e.id === id) || {}).name || id;
+
+  const $ = id => document.getElementById(id);
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const eur = n => n.toLocaleString('fr-FR', { minimumFractionDigits: 0, maximumFractionDigits: 2 }) + ' €';
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+  const num = (x, d) => { const n = parseFloat(x); return isFinite(n) && n >= 0 ? n : d; };
+  const sum = list => list.reduce((t, e) => t + e.amount, 0);
+  const fmtDate = iso => new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' });
+  const monthLabel = iso => new Date(iso).toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' });
+
+  // ---------- Données ----------
+  function cleanExpense(e) {
+    if (!e || !catIds.includes(e.cat)) return null;
+    const a = parseFloat(e.amount);
+    if (!(a > 0) || !isFinite(a)) return null;
+    const d = new Date(e.date);
+    return { id: String(e.id || uid()), cat: e.cat, amount: a, note: String(e.note || '').slice(0, 80),
+             date: isNaN(d) ? new Date().toISOString() : d.toISOString(), fixedId: e.fixedId ? String(e.fixedId) : undefined };
+  }
+  const cleanExpenses = l => (Array.isArray(l) ? l : []).map(cleanExpense).filter(Boolean);
+  const cleanFixed = l => (Array.isArray(l) ? l : []).filter(f => f && String(f.name || '').trim())
+    .map(f => ({ id: String(f.id || uid()), name: String(f.name).slice(0, 60), amount: num(f.amount, 0) }));
+  function cleanArchive(l) {
+    return (Array.isArray(l) ? l : []).filter(a => a && Array.isArray(a.expenses)).map(a => {
+      const limits = {}; DEFAULT_ENV.forEach(e => { limits[e.id] = num(a.limits && a.limits[e.id], e.limit); });
+      const d = new Date(a.closedAt);
+      return { id: String(a.id || uid()), label: String(a.label || 'Mois archivé').slice(0, 40),
+               closedAt: isNaN(d) ? new Date().toISOString() : d.toISOString(), limits, income: a.income != null ? num(a.income, 0) : null, expenses: cleanExpenses(a.expenses) };
+    });
+  }
+  function normalize(d) {
+    const lim = {};
+    (Array.isArray(d.envelopes) ? d.envelopes : []).forEach(e => { if (e) lim[e.id] = e.limit; });
+    let income = cleanFixed(d.income);
+    if (!d.incomeSeeded && !income.length) income = [{ id: uid(), name: 'Bourse + Taf', amount: 1050 }];
+    let fixed = cleanFixed(d.fixed);
+    if (!d.fixedSeeded && !fixed.length) fixed = [{ id: uid(), name: 'Charges fixes du mois', amount: 450 }];
+    return { envelopes: DEFAULT_ENV.map(e => ({ ...e, limit: num(lim[e.id], e.limit) })),
+             expenses: cleanExpenses(d.expenses), fixed, fixedSeeded: true, income, incomeSeeded: true, archive: cleanArchive(d.archive) };
+  }
+  // Ancien format : une liste d'enveloppes avec un total « spent »
+  function fromLegacy(list) {
+    const s = normalize({ envelopes: list });
+    list.forEach(x => {
+      if (x && catIds.includes(x.id) && parseFloat(x.spent) > 0)
+        s.expenses.push({ id: uid(), cat: x.id, amount: parseFloat(x.spent), note: "Report de l'ancienne version", date: new Date().toISOString() });
+    });
+    return s;
+  }
+  function load() {
+    try { const v2 = JSON.parse(localStorage.getItem(KEY)); if (v2 && Array.isArray(v2.envelopes)) return normalize(v2); } catch (e) {}
+    try { const v1 = JSON.parse(localStorage.getItem(OLD_KEY)); if (Array.isArray(v1)) return fromLegacy(v1); } catch (e) {}
+    return normalize({});
+  }
+  let state = load();
+  // Chaque charge fixe a exactement une dépense liée, toujours à jour avec son montant
+  function syncFixed() {
+    const ids = new Set(state.fixed.map(f => f.id)), seen = new Set();
+    state.expenses = state.expenses.filter(e => {
+      if (!e.fixedId) return true;
+      if (!ids.has(e.fixedId) || seen.has(e.fixedId)) return false;
+      seen.add(e.fixedId); return true;
+    });
+    state.fixed.forEach(f => {
+      const ex = state.expenses.find(e => e.fixedId === f.id);
+      if (f.amount > 0) {
+        if (ex) { ex.amount = f.amount; ex.note = f.name; }
+        else state.expenses.push({ id: uid(), cat: 'fixes', amount: f.amount, note: f.name, date: new Date().toISOString(), fixedId: f.id });
+      } else if (ex) state.expenses = state.expenses.filter(e => e !== ex);
+    });
+  }
+  syncFixed();
+  const save = () => { syncFixed(); try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {} };
+  const spentOf = id => sum(state.expenses.filter(e => e.cat === id));
+  const statusClass = pct => pct >= 100 ? 'over' : pct > 75 ? 'warn' : '';
+
+  // ---------- Dashboard ----------
+  function buildGrid() {
+    $('grid').innerHTML = state.envelopes.map(e => `
+      <article class="env" data-id="${e.id}">
+        <div class="env-head"><span class="env-name">${esc(e.name)}</span><span class="env-amount"></span></div>
+        <div class="gauge"><div class="gauge-fill"></div></div>
+        <div class="env-foot">
+          <span class="pct"></span>
+          <label class="limit-wrap">Limite <input type="number" min="0" step="1" inputmode="decimal" value="${e.limit}" aria-label="Limite ${esc(e.name)}"> €</label>
+        </div>
+      </article>`).join('');
+    $('cat').innerHTML = state.envelopes.map(e => `<option value="${e.id}">${esc(e.name)}</option>`).join('');
+    document.querySelectorAll('.env').forEach(card => {
+      card.querySelector('input').addEventListener('input', ev => {
+        state.envelopes.find(x => x.id === card.dataset.id).limit = Math.max(0, parseFloat(ev.target.value) || 0);
+        save(); renderDashboard();
+      });
+    });
+  }
+  function renderDashboard() {
+    let alloc = 0, spent = 0;
+    state.envelopes.forEach(e => {
+      const s = spentOf(e.id); alloc += e.limit; spent += s;
+      const card = document.querySelector(`.env[data-id="${e.id}"]`);
+      const pct = e.limit > 0 ? (s / e.limit) * 100 : (s > 0 ? 100 : 0);
+      card.querySelector('.env-amount').textContent = `${eur(s)} / ${eur(e.limit)}`;
+      const fill = card.querySelector('.gauge-fill');
+      fill.style.width = Math.min(pct, 100) + '%';
+      fill.className = 'gauge-fill ' + statusClass(pct);
+      card.querySelector('.pct').textContent = Math.round(pct) + ' % utilisé';
+    });
+    const inc = sum(state.income), diff = inc - alloc;
+    const il = $('incomeLine');
+    il.className = 'inc-line' + (diff < 0 ? ' bad' : '');
+    il.textContent = `Revenu : ${eur(inc)} · Alloué : ${eur(alloc)} · ` + (diff === 0 ? 'tout est réparti' : diff > 0 ? `${eur(diff)} non alloués` : `${eur(-diff)} alloués en trop`);
+    const left = alloc - spent;
+    $('kAlloc').textContent = eur(alloc);
+    $('kSpent').textContent = eur(spent);
+    const kl = $('kLeft');
+    kl.textContent = eur(left);
+    kl.className = 'value ' + (left < 0 ? 'neg' : 'pos');
+  }
+
+  // ---------- Revenus et charges fixes : listes verrouillées, modifiables avec « Modifier » ----------
+  const editing = new Set();
+  function setupList(c) {
+    const el = $(c.list);
+    c.render = () => {
+      const list = state[c.key];
+      el.innerHTML = list.length ? list.map(f => editing.has(f.id)
+        ? `<div class="fx editing" data-id="${f.id}">
+            <input type="text" class="fx-name" maxlength="60" value="${esc(f.name)}" aria-label="Nom">
+            <input type="number" class="fx-amt" min="0" step="any" inputmode="decimal" value="${f.amount}" aria-label="Montant"><span class="eur">€</span>
+            <button type="button" class="btn-primary btn-sm" data-ok>OK</button>
+            <button type="button" class="icon" data-del aria-label="Supprimer ${esc(f.name)}">✕</button>
+          </div>`
+        : `<div class="fx locked" data-id="${f.id}">
+            <span class="lock" aria-hidden="true">🔒</span>
+            <span class="fx-name-t">${esc(f.name)}</span>
+            <span class="fx-amt-t">${eur(f.amount)}</span>
+            <button type="button" class="btn-ghost btn-sm" data-edit>Modifier</button>
+          </div>`).join('') : `<div class="empty">${c.empty}</div>`;
+      $(c.tot).textContent = list.length ? c.totText(sum(list)) : '';
+    };
+    el.addEventListener('click', ev => {
+      const row = ev.target.closest('.fx'); if (!row) return;
+      const id = row.dataset.id, f = state[c.key].find(x => x.id === id); if (!f) return;
+      if (ev.target.closest('[data-edit]')) { editing.add(id); c.render(); const i = el.querySelector(`.fx[data-id="${id}"] .fx-amt`); if (i) i.focus(); }
+      else if (ev.target.closest('[data-ok]')) {
+        f.name = row.querySelector('.fx-name').value.trim().slice(0, 60) || f.name;
+        f.amount = num(row.querySelector('.fx-amt').value.replace(',', '.'), f.amount);
+        editing.delete(id); save(); renderAll();
+      } else if (ev.target.closest('[data-del]')) {
+        state[c.key] = state[c.key].filter(x => x.id !== id); editing.delete(id); save(); renderAll();
+      }
+    });
+    el.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter' && ev.target.closest('.fx.editing')) { ev.preventDefault(); ev.target.closest('.fx').querySelector('[data-ok]').click(); }
+    });
+    $(c.add).onclick = () => {
+      const name = $(c.name).value.trim(), amt = parseFloat(String($(c.amt).value).replace(',', '.'));
+      if (!name || !isFinite(amt) || amt < 0) { $(c.err).hidden = false; return; }
+      $(c.err).hidden = true;
+      state[c.key].push({ id: uid(), name: name.slice(0, 60), amount: amt });
+      $(c.name).value = ''; $(c.amt).value = '';
+      save(); renderAll(); $(c.name).focus();
+    };
+    [$(c.name), $(c.amt)].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $(c.add).click(); } }));
+    return c;
+  }
+  const incomeUI = setupList({ key: 'income', list: 'incomeList', tot: 'incomeTot', name: 'inName', amt: 'inAmt', add: 'inAdd', err: 'inErr',
+    empty: 'Aucun revenu. Ajoute ton salaire, ta bourse… ils seront comptés chaque mois.', totText: t => `Total : ${eur(t)} par mois` });
+  const fixedUI = setupList({ key: 'fixed', list: 'fixedList', tot: 'fixedTot', name: 'fxName', amt: 'fxAmt', add: 'fxAdd', err: 'fxErr',
+    empty: 'Aucune charge fixe. Ajoute ton loyer, ton téléphone, tes abonnements : ils seront comptés automatiquement chaque mois.',
+    totText: t => `Total : ${eur(t)} / limite ${eur(state.envelopes.find(e => e.id === 'fixes').limit)}` });
+  const renderFixed = () => { incomeUI.render(); fixedUI.render(); };
+
+  // ---------- Historique ----------
+  function renderHistory() {
+    const list = [...state.expenses].sort((a, b) => new Date(b.date) - new Date(a.date));
+    $('histTot').textContent = list.length ? `${list.length} dépense${list.length > 1 ? 's' : ''} · ${eur(sum(list))}` : '';
+    $('history').innerHTML = list.length ? list.map(e => `
+      <div class="hist-item" data-id="${e.id}">
+        <span class="h-date">${fmtDate(e.date)}</span>
+        <div class="h-main">
+          <div class="h-note${e.note ? '' : ' none'}">${e.note ? esc(e.note) : 'Sans note'}</div>
+          <span class="chip">${esc(catName(e.cat))}</span>${e.fixedId ? '<span class="chip">charge fixe</span>' : ''}
+        </div>
+        <span class="h-amt">${eur(e.amount)}</span>
+        ${e.fixedId ? '<span class="h-lock" title="Charge fixe : modifie-la dans le panneau Charges fixes" aria-hidden="true">🔒</span>' : '<button type="button" class="icon" data-del aria-label="Supprimer cette dépense">✕</button>'}
+      </div>`).join('')
+      : '<div class="empty">Aucune dépense ce mois-ci. Utilise « + Saisir une dépense » pour commencer.</div>';
+  }
+  $('history').addEventListener('click', ev => {
+    const btn = ev.target.closest('[data-del]'); if (!btn) return;
+    const id = btn.closest('.hist-item').dataset.id;
+    state.expenses = state.expenses.filter(e => e.id !== id);
+    save(); renderAll();
+  });
+
+  // ---------- Archives ----------
+  function renderArchives() {
+    const list = [...state.archive].sort((a, b) => new Date(b.closedAt) - new Date(a.closedAt));
+    $('archTot').textContent = list.length ? `${list.length} mois` : '';
+    $('archives').innerHTML = list.length ? list.map(a => {
+      const total = sum(a.expenses), alloc = DEFAULT_ENV.reduce((t, e) => t + a.limits[e.id], 0);
+      const cats = DEFAULT_ENV.map(e => {
+        const s = sum(a.expenses.filter(x => x.cat === e.id));
+        return `<div><span>${esc(e.name)}</span><b class="${s > a.limits[e.id] ? 'over' : ''}">${eur(s)} / ${eur(a.limits[e.id])}</b></div>`;
+      }).join('');
+      const exps = [...a.expenses].sort((x, y) => new Date(y.date) - new Date(x.date)).map(x =>
+        `<div class="arch-exp"><span>${fmtDate(x.date)} · ${esc(catName(x.cat))}${x.note ? ' · ' + esc(x.note) : ''}</span><span>${eur(x.amount)}</span></div>`).join('');
+      return `<details data-id="${a.id}"><summary><span>${esc(a.label)}</span><span class="tot">${eur(total)} dépensés sur ${eur(alloc)}</span></summary>
+        <div class="arch-body">${a.income != null ? `<div class="arch-exp"><span>Revenu du mois</span><span>${eur(a.income)}</span></div>` : ''}<div class="arch-cats">${cats}</div>${exps}
+        <div class="arch-actions"><button type="button" class="btn-ghost btn-sm" data-delarch>Supprimer cette archive</button></div></div></details>`;
+    }).join('') : '<div class="empty">Aucun mois archivé. « Réinitialiser le mois » range le mois en cours ici avant de le remettre à zéro.</div>';
+  }
+  $('archives').addEventListener('click', ev => {
+    const btn = ev.target.closest('[data-delarch]'); if (!btn) return;
+    if (!btn.dataset.armed) {
+      btn.dataset.armed = '1'; btn.textContent = 'Confirmer la suppression'; btn.classList.add('btn-danger');
+      setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = 'Supprimer cette archive'; btn.classList.remove('btn-danger'); } }, 3000);
+      return;
+    }
+    const id = btn.closest('details').dataset.id;
+    state.archive = state.archive.filter(a => a.id !== id);
+    save(); renderAll();
+  });
+
+  function renderAll() { renderDashboard(); renderFixed(); renderHistory(); renderArchives(); }
+
+  // ---------- Modales ----------
+  const overlay = $('overlay'), confirmOverlay = $('confirmOverlay'), bOverlay = $('backupOverlay');
+  const closeAll = () => [overlay, confirmOverlay, bOverlay].forEach(o => o.classList.remove('open'));
+  [overlay, confirmOverlay, bOverlay].forEach(o => o.addEventListener('click', e => { if (e.target === o) closeAll(); }));
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') closeAll(); });
+
+  $('openModal').onclick = () => { overlay.classList.add('open'); $('amount').value = ''; $('note').value = ''; $('err').hidden = true; $('amount').focus(); };
+  $('cancel').onclick = closeAll;
+  function submitExpense() {
+    const amount = parseFloat(String($('amount').value).replace(',', '.'));
+    if (!(amount > 0)) { $('err').hidden = false; $('amount').focus(); return; }
+    state.expenses.push({ id: uid(), cat: $('cat').value, amount, note: $('note').value.trim().slice(0, 80), date: new Date().toISOString() });
+    save(); renderAll(); closeAll();
+  }
+  $('form').addEventListener('submit', e => { e.preventDefault(); submitExpense(); });
+  $('ok').addEventListener('click', submitExpense);
+  [$('amount'), $('note')].forEach(i => i.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitExpense(); } }));
+  $('amount').addEventListener('input', () => { $('err').hidden = true; });
+
+  // Réinitialiser = archiver le mois puis remettre les dépenses à zéro (limites et charges fixes conservées)
+  $('reset').onclick = () => {
+    const n = state.expenses.length;
+    $('confirmText').textContent = n
+      ? `Les ${n} dépense${n > 1 ? 's' : ''} du mois (${eur(sum(state.expenses))}) seront rangées dans les archives, puis les jauges repartent à 0. Tes limites et tes charges fixes sont conservées.`
+      : "Il n'y a aucune dépense ce mois-ci : rien à archiver.";
+    $('confirmYes').hidden = !n;
+    confirmOverlay.classList.add('open');
+  };
+  $('confirmNo').onclick = closeAll;
+  $('confirmYes').onclick = () => {
+    if (state.expenses.length) {
+      const first = state.expenses.reduce((m, e) => e.date < m ? e.date : m, state.expenses[0].date);
+      const limits = {}; state.envelopes.forEach(e => { limits[e.id] = e.limit; });
+      state.archive.push({ id: uid(), label: monthLabel(first), closedAt: new Date().toISOString(), limits, income: sum(state.income), expenses: state.expenses });
+      state.expenses = [];
+    }
+    save(); renderAll(); closeAll();
+  };
+
+  // ---------- Sauvegarde : export / import ----------
+  const bMsg = (t, bad) => { $('backupMsg').textContent = t; $('backupMsg').className = 'msg' + (bad ? ' bad' : ''); };
+  const exportJSON = () => JSON.stringify({ app: 'budget-diete-tracker', version: 2, exportedAt: new Date().toISOString(),
+    envelopes: state.envelopes.map(({ id, limit }) => ({ id, limit })), expenses: state.expenses, fixed: state.fixed, fixedSeeded: true, income: state.income, incomeSeeded: true, archive: state.archive }, null, 2);
+  $('openBackup').onclick = () => { $('backupText').value = exportJSON(); $('importText').value = ''; $('importFile').value = ''; bMsg(''); bOverlay.classList.add('open'); };
+  $('backupClose').onclick = closeAll;
+  $('dl').onclick = () => {
+    try {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([exportJSON()], { type: 'application/json' }));
+      a.download = 'budget-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(a); a.click(); a.remove();
+      bMsg("Fichier prêt. S'il ne se télécharge pas, utilise « Copier ».");
+    } catch (e) { bMsg('Téléchargement impossible. Utilise « Copier ».', true); }
+  };
+  $('copy').onclick = async () => {
+    const ta = $('backupText'); ta.value = exportJSON();
+    try { await navigator.clipboard.writeText(ta.value); bMsg("Copié. Colle-le dans l'autre appareil."); }
+    catch (e) { ta.focus(); ta.select(); bMsg('Texte sélectionné : copie-le à la main.'); }
+  };
+  function importData(text) {
+    let data;
+    try { data = JSON.parse(text); } catch (e) { return bMsg('Données illisibles. Vérifie le texte ou le fichier.', true); }
+    const list = Array.isArray(data) ? data : data && data.envelopes;
+    if (!Array.isArray(list)) return bMsg("Ce n'est pas une sauvegarde de cette app.", true);
+    if (!list.some(x => x && catIds.includes(x.id))) return bMsg('Aucune enveloppe reconnue.', true);
+    const isNew = !Array.isArray(data) && (data.version >= 2 || Array.isArray(data.expenses));
+    state = isNew ? normalize(data) : fromLegacy(list);
+    save(); buildGrid(); renderAll();
+    $('backupText').value = exportJSON();
+    bMsg(`Import réussi : ${state.expenses.length} dépenses, ${state.fixed.length} charges fixes, ${state.archive.length} mois archivés.`);
+  }
+  $('importBtn').onclick = () => importData($('importText').value);
+  $('importFile').addEventListener('change', e => {
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader(); r.onload = () => importData(String(r.result)); r.onerror = () => bMsg('Lecture du fichier impossible.', true); r.readAsText(f);
+  });
+
+  buildGrid(); renderAll(); save();
+})();
+</script>
+
+<script>
+if ('serviceWorker' in navigator) { window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {})); }
+</script>
+</body>
+</html>
